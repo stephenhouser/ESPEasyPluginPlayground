@@ -49,7 +49,7 @@
  * Tested with 3.3V on NodeMCU compatible ESP8266.
  */
 
-#ifdef PLUGIN_BUILD_STEPHEN
+#ifdef PLUGIN_BUILD_DEV
 
 #define PLUGIN_214
 #define PLUGIN_ID_214        214
@@ -113,7 +113,7 @@ boolean Plugin_214(byte function, struct EventStruct *event, String &string)
 
     case PLUGIN_INIT:
       {
-        addLog(LOG_LEVEL_INFO, "Init: LV-EZx");
+        addLog(LOG_LEVEL_INFO, "LV-EZx: Init");
 
         int data_pin = Settings.TaskDevicePin1[event->TaskIndex];
         pinMode(data_pin, INPUT);
@@ -123,7 +123,7 @@ boolean Plugin_214(byte function, struct EventStruct *event, String &string)
     case PLUGIN_READ:
       {
         boolean success = false;
-        String log = F("LV-EZx : Distance: ");
+        String log = F("LV-EZx: Distance: ");
 
         // For custom samples and delay between samples
         int data_pin = Settings.TaskDevicePin1[event->TaskIndex];
@@ -135,7 +135,12 @@ boolean Plugin_214(byte function, struct EventStruct *event, String &string)
           UserVar[event->BaseVarIndex + 0] = value;
           UserVar[event->BaseVarIndex + 1] = PLUGIN_214_RAW2INCH(value);
           UserVar[event->BaseVarIndex + 2] = PLUGIN_214_RAW2MM(value);
-          log += UserVar[event->BaseVarIndex];
+          log += UserVar[event->BaseVarIndex + 0];
+          log += "us ";
+          log += UserVar[event->BaseVarIndex + 1];
+          log += "in ";
+          log += UserVar[event->BaseVarIndex + 2];
+          log += "mm";
           success = true;
         }
         else 
