@@ -24,10 +24,10 @@ List of commands :
 	- HSV,<hue 0-255>,<saturation 0-255>,<value/brightness 0-255>
 	- HUE,<hue 0-360>
 	- SAT,<saturation 0-100>
-	- VAL,<value/brightness 0-100>
-	- DIM,<value/brightness 0-100>
-	- H_RGB,<RGB HEX COLOR > ie FF0000 for red
-	- H_HSV,<HSV HEX COLOR > ie 00FFFF for red
+	- VAL,<value/brightness 0-1023>
+	- DIM,<value/brightness 0-1023>
+	- H_RGB,<RGB HEX COLOR > ie #FF0000 for red
+	- H_HSV,<HSV HEX COLOR > ie #00FFFF for red
 	- SPEED,<0-65535> Fast to slow
 	- MODE,<mode 0-6>,<Speed 1-255>	time for full color hue circle;
 		Available  Modes:
@@ -329,54 +329,54 @@ boolean Plugin_141 (byte function, struct EventStruct *event, String& string)
 
 
 			byte type = Settings.TaskDevicePluginConfig[event->TaskIndex][0];
-			addFormSelector(string, F("LedStrip Type"), PLUGIN_141_CONF_0, i , options, optionValues, NULL ,type, true );
+			addFormSelector(F("LedStrip Type"), PLUGIN_141_CONF_0, i , options, optionValues, NULL ,type, true );
 
 
 			// show options depending on type selected ..........
 			//led Strip
 			if( type> 0 && type < PLUGIN_141_FIRST_TYPE_PIX ){
 				// RGB
-				addRowLabel(string, "GPIO Red");
-				addPinSelect(false, string, PLUGIN_141_CONF_1, Settings.TaskDevicePluginConfig[event->TaskIndex][1]);
+				addRowLabel("GPIO Red");
+				addPinSelect(false, PLUGIN_141_CONF_1, Settings.TaskDevicePluginConfig[event->TaskIndex][1]);
 			
-				addRowLabel(string, "GPIO Green");
-				addPinSelect(false, string, PLUGIN_141_CONF_2, Settings.TaskDevicePluginConfig[event->TaskIndex][2]);
+				addRowLabel("GPIO Green");
+				addPinSelect(false, PLUGIN_141_CONF_2, Settings.TaskDevicePluginConfig[event->TaskIndex][2]);
 
-				addRowLabel(string, "GPIO Blue");
-				addPinSelect(false, string, PLUGIN_141_CONF_3, Settings.TaskDevicePluginConfig[event->TaskIndex][3]);
+				addRowLabel("GPIO Blue");
+				addPinSelect(false, PLUGIN_141_CONF_3, Settings.TaskDevicePluginConfig[event->TaskIndex][3]);
 
 				// RGBW
 				if( type >=3 ){
-					addRowLabel(string, "GPIO White 1");
-					addPinSelect(false, string, PLUGIN_141_CONF_4, Settings.TaskDevicePluginConfig[event->TaskIndex][4]);
+					addRowLabel("GPIO White 1");
+					addPinSelect(false, PLUGIN_141_CONF_4, Settings.TaskDevicePluginConfig[event->TaskIndex][4]);
 				}
 				
 				// RGBWW
 				if( type >=5 ){
-					addRowLabel(string, "GPIO White 2");
-					addPinSelect(false, string, PLUGIN_141_CONF_5, Settings.TaskDevicePluginConfig[event->TaskIndex][5]);
+					addRowLabel("GPIO White 2");
+					addPinSelect(false, PLUGIN_141_CONF_5, Settings.TaskDevicePluginConfig[event->TaskIndex][5]);
 				}
 				
 				// has IR				
 				if( type ==2 || type == 4 || type == 6 ){
-					addRowLabel(string, "GPIO InfraRed");
-					addPinSelect(false, string, PLUGIN_141_CONF_6, Settings.TaskDevicePluginConfig[event->TaskIndex][6]);
+					addRowLabel("GPIO InfraRed");
+					addPinSelect(false, PLUGIN_141_CONF_6, Settings.TaskDevicePluginConfig[event->TaskIndex][6]);
 				}
 
-				addFormSeparator(string);
-				string += F("<TR><TD>Huacanxing H801 pins:</TD><TD>15, 13, 12, 14, 4 - normal<TD>");			
-				string += F("<TR><TD>Magic Home v1.0 pins:</TD><TD>14,  5, 12, 13, IR=? - Invers<TD>");			
-				string += F("<TR><TD>Magic Home v2.0 pins:</TD><TD> 5, 12, 13, 15, IR=4 - Invers<TD>");			
+				addFormSeparator(2);
+				addHtml(F("<TR><TD>Huacanxing H801 pins:</TD><TD>15, 13, 12, 14, 4 - normal<TD>"));			
+				addHtml(F("<TR><TD>Magic Home v1.0 pins:</TD><TD>14,  5, 12, 13, IR=? - Invers<TD>"));			
+				addHtml(F("<TR><TD>Magic Home v2.0 pins:</TD><TD> 5, 12, 13, 15, IR=4 - Invers<TD>"));			
 			}
 			else if( type >= PLUGIN_141_FIRST_TYPE_PIX ){
-				string += F("<TR><TD><b style='color:red'>NOT yet implemented</b><TD>");			
+				addHtml(F("<TR><TD><b style='color:red'>NOT yet implemented</b><TD>"));			
 				
 				if (type < PLUGIN_141_FIRST_TYPE_PIX_SPI){
-					addRowLabel(string, "GPIO Data");
-					addPinSelect(false, string, PLUGIN_141_CONF_1, Settings.TaskDevicePluginConfig[event->TaskIndex][1]);			
+					addRowLabel("GPIO Data");
+					addPinSelect(false, PLUGIN_141_CONF_1, Settings.TaskDevicePluginConfig[event->TaskIndex][1]);			
 				}
 				else {
-					string += F("<TR><TD>Use hardware SPI GPIOs<TD>");
+					addHtml(F("<TR><TD>Use hardware SPI GPIOs<TD>"));
 				}
 			}
 
@@ -444,42 +444,50 @@ boolean Plugin_141 (byte function, struct EventStruct *event, String& string)
 
 			if (command == F("off"))	{
 				Fp141_CommandOff();
+				success = true;
 			}
 
 			if (command == F("on"))	{
 				Fp141_CommandOn();
+				success = true;
 			}
 
 			if (command == F("rgb"))	{
 				Fp141_SetCurrentColor( Fp141_RgbToHSV(CRGB(event->Par1, event->Par2, event->Par3)));
 				Fp141_OutputCurrentColor();
+				success = true;
 			}
 
 			if (command == F("hsv"))	{
 				Fp141_SetCurrentColor(CHSV (event->Par1, event->Par2, event->Par3));
 				Fp141_OutputCurrentColor();
+				success = true;
 			}
 
 			if (command == F("hue"))	{
 				v_p141_cur_color.h	= event->Par1 ;	 //Hue
 				Fp141_SetCurrentColor(v_p141_cur_color);
 				Fp141_OutputCurrentColor();
+				success = true;
 			}
 
 			if (command == F("sat"))	{
 				v_p141_cur_color.s 	= event->Par1 ;	 //Saturation
 				Fp141_SetCurrentColor(v_p141_cur_color);
 				Fp141_OutputCurrentColor();
+				success = true;
 			}
 
 			if (command == F("val") || command == F("dim"))	{
 				v_p141_cur_color.v 	= event->Par1 ;	 //Value/Brightness
 				Fp141_SetCurrentColor(v_p141_cur_color);
 				Fp141_OutputCurrentColor();
+				success = true;
 			}
 
 			if (command == F("speed"))	{
 				v_p141_cur_anim_speed = event->Par1 ;
+				success = true;
 			}
 
 			if (command == F("h_rgb"))	{
@@ -488,6 +496,7 @@ boolean Plugin_141 (byte function, struct EventStruct *event, String& string)
 				Fp141_SetCurrentColor(v_p141_cur_color);
 				Fp141_OutputCurrentColor();
 				//String log = F(PLUGIN_141_LOGPREFIX); log += F("H_RGB="); log += color; addLog(LOG_LEVEL_DEBUG, log);
+				success = true;
 			}
 
 			if (command == F("h_hsv"))	{
@@ -496,30 +505,37 @@ boolean Plugin_141 (byte function, struct EventStruct *event, String& string)
 				Fp141_SetCurrentColor(v_p141_cur_color);
 				Fp141_OutputCurrentColor();
 				//String log = F(PLUGIN_141_LOGPREFIX); log += F("H_HSV="); log += color; addLog(LOG_LEVEL_DEBUG, log);
+			  success = true;
 			}
 
 
 			if (command == F("mode"))	{
 				byte mode = event->Par1;
-				
+
 				if(mode == 0){
 					Fp141_CommandOff();
+					success = true;
 				}
 				else if(mode == 1){
 					Fp141_CommandOn();
+					success = true;
 				}
 				else if(mode >= PLUGIN_141_FIRST_ANIM_MODE && mode < PLUGIN_141_MODES_TOTAL ){
 					Fp141_ProcessAnimation(mode, true, false, event->Par2, event->Par3, event->Par4, event->Par5);
+						success = true;
 				}
 			}
-			
+
+			if(success) {
+				Fp141_SendStatus(event->Source);
+			}
+
 			//store current value
 			UserVar[event->BaseVarIndex + 0] = (int) v_p141_cur_color.h;
 			UserVar[event->BaseVarIndex + 1] = (int) v_p141_cur_color.s;
 			UserVar[event->BaseVarIndex + 2] = (int) v_p141_cur_color.v;
 			UserVar[event->BaseVarIndex + 3] = (int) v_p141_cur_anim_mode;
 
-			success = true;
 			break;
 		}
 
@@ -718,9 +734,9 @@ void Fp141_CommandOff(){
 // ---------------------------------------------------------------------------------------
 void Fp141_OutputRGB( const CRGB& rgb){
 	if(v_p141_cur_strip_type < PLUGIN_141_FIRST_TYPE_PIX ){
-		analogWrite(v_p141_pins[0], v_p141_pin_inverse ? (PWMRANGE - rgb.r)  : rgb.r);
-		analogWrite(v_p141_pins[1], v_p141_pin_inverse ? (PWMRANGE - rgb.g)  : rgb.g);
-		analogWrite(v_p141_pins[2], v_p141_pin_inverse ? (PWMRANGE - rgb.b)  : rgb.b);
+		analogWrite(v_p141_pins[0], v_p141_pin_inverse ? (PWMRANGE - rgb.r*4)  : rgb.r*4);
+		analogWrite(v_p141_pins[1], v_p141_pin_inverse ? (PWMRANGE - rgb.g*4)  : rgb.g*4);
+		analogWrite(v_p141_pins[2], v_p141_pin_inverse ? (PWMRANGE - rgb.b*4)  : rgb.b*4);
 	}
 	else{
 		// pixels mode
@@ -808,6 +824,42 @@ CHSV Fp141_LongToHsv(unsigned long hsv){
 	out.s = hsv >> 8 & 0xFF;
 	out.v = hsv & 0xFF;
 	return out;
+}
+
+// ---------------------------------------------------------------------------------
+// ------------------------------ JsonResponse -------------------------------------
+// ---------------------------------------------------------------------------------
+void Fp141_SendStatus(byte eventSource) {
+
+	CRGB rgb;
+	rgb = v_p141_cur_color;
+
+  String log = F(PLUGIN_141_LOGPREFIX);
+  log += F("JSON reply send.");
+  addLog(LOG_LEVEL_INFO, log);
+
+  String json;
+  printToWebJSON = true;
+  json += F("{\n");
+  json += F("\"plugin\": \"141");
+  json += F("\",\n\"mode\": \"");
+  json += v_p141_cur_anim_mode;
+  json += F("\",\n\"speed\": \"");
+  json += v_p141_cur_anim_speed;
+  json += F("\",\n\"r\": \"");
+  json += rgb.r;
+  json += F("\",\n\"g\": \"");
+  json += rgb.g;
+  json += F("\",\n\"b\": \"");
+  json += rgb.b;
+  json += F("\",\n\"h\": \"");
+  json += v_p141_cur_color.h;
+  json += F("\",\n\"s\": \"");
+  json += v_p141_cur_color.s;
+	json += F("\",\n\"v\": \"");
+  json += v_p141_cur_color.v;
+  json += F("\"\n}\n");
+  SendStatus(eventSource, json); // send http response to controller (JSON format)
 }
 
 /*

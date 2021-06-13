@@ -1,30 +1,63 @@
-//############################# Plugin 165: Serial MCU controlled switch v1.8 ###########################
-//
-//  Designed for TUYA/YEWELINK Wifi Touch Light switch with ESP8266 + PIC16F1829 MCU,
-//  the similar Sonoff Dual MCU controlled Wifi relay and LCTECH WIFI RELAY is also supported.
-//  Based on P020 Ser2Net and P001 Switch.
-//
-//  Dummy device (Switch) can be used to control relays, one device per relay and/or rules Publish command
-//  for example.
-//  Support thread: https://www.letscontrolit.com/forum/viewtopic.php?f=6&t=3245
-//
-//#######################################################################################################
+/*##########################################################################################
+  ######################### Plugin 165: Serial MCU controlled switch #######################
+  ##########################################################################################
 
+  Features :
+   - make it possible to control serial linked devices through ESP8266
+   - exactly only ONE P165 plugin can be used one time on one device!
+   - serial have to be ENABLED, and serial logging level set to 0 at ESPEasy settings!
+
+  Compatible device list:
+   1/ Tuya Wifi Touch wall switch (originally controlled by Tuya Smart/Smart Life app)
+   2/ Tuya Wifi Dimmer Switch (originally controlled by Tuya Smart/Smart Life app)
+   3/ Sonoff Dual - v1 only! (R2 has no serial MCU!)
+   4/ LCTECH compatible 5V WiFi relay 1,2 and 4 relay versions also supported.
+
+   Relay states can be read from plugin values, the LCTech communication is only 1way, so the last stored state seen.
+   Tuya can report states and can be queried the actual state, Sonoff Dual may report its state, when it's hardware buttons pushed.
+
+   Support forum  thread: https://www.letscontrolit.com/forum/viewtopic.php?f=6&t=3245
+
+   !!! For some reasons the serial 2way communication only works with Arduino ESP8266 core 2.4.0 !!!
+
+  List of commands :
+	- relay,[relay_number],[status]                 Set specific relay (0-3) to status (0/1)
+	- relaypulse,[relay_number],[status],[delay]    Pulse specific relay for DELAY millisec with STATUS state,
+                                                        than return to inverse state
+        - ydim,[DIM_VALUE]                              Set DIM_VALUE to Tuya dimmer switch (value can be 0-255, no range check!)
+                                                        Of course, only the Tuya dimmer can do it... dim value can be read from plugin values.
+                                                        There are no checks for is it state on or off.
+
+  Command Examples :
+	-  /control?cmd=relay,0,1             Switch on first relay
+	-  /control?cmd=relay,0,0             Switch off first relay
+	-  /control?cmd=relay,1,1             Switch on second relay
+	-  /control?cmd=relay,1,0             Switch off second relay
+	-  /control?cmd=relaypulse,0,1,500    Set first relay to ON for 500ms, than stay OFF
+	-  /control?cmd=relaypulse,0,0,1000   Set first relay to OFF for 1s, than stay ON
+	-  /control?cmd=ydim,255              Set dimmer to MAX value
+	-  /control?cmd=ydim,25               Set dimmer to ~10%
+
+  ------------------------------------------------------------------------------------------
+	Copyleft Nagy Sándor 2018 - https://bitekmindenhol.blog.hu/
+  ------------------------------------------------------------------------------------------
+*/
 #define PLUGIN_165
 #define PLUGIN_ID_165         165
 #define PLUGIN_NAME_165       "Serial MCU controlled switch"
 #define PLUGIN_VALUENAME1_165 "Relay0"
 #define PLUGIN_VALUENAME2_165 "Relay1"
 #define PLUGIN_VALUENAME3_165 "Relay2"
+#define PLUGIN_VALUENAME4_165 "Relay3"
 
-#define BUFFER_SIZE   100 // at least 3x33 byte serial buffer needed for Tuya
+#define BUFFER_SIZE   128 // at least 3x33 byte serial buffer needed for Tuya
 
 #define SER_SWITCH_YEWE 1
 #define SER_SWITCH_SONOFFDUAL 2
 #define SER_SWITCH_LCTECH 3
 
-static byte Plugin_165_switchstate[3];
-static byte Plugin_165_ostate[3];
+static byte Plugin_165_switchstate[4];
+static byte Plugin_165_ostate[4];
 byte Plugin_165_commandstate = 0; // 0:no,1:inprogress,2:finished
 byte Plugin_165_type;
 byte Plugin_165_numrelay = 1;
@@ -44,12 +77,12 @@ boolean Plugin_165(byte function, struct EventStruct *event, String& string)
       {
         Device[++deviceCount].Number = PLUGIN_ID_165;
         Device[deviceCount].Type = DEVICE_TYPE_DUMMY;
-        Device[deviceCount].VType = SENSOR_TYPE_TRIPLE;
+        Device[deviceCount].VType = SENSOR_TYPE_QUAD;
         Device[deviceCount].Ports = 0;
         Device[deviceCount].PullUpOption = false;
         Device[deviceCount].InverseLogicOption = false;
         Device[deviceCount].FormulaOption = false;
-        Device[deviceCount].ValueCount = 3;
+        Device[deviceCount].ValueCount = 4;
         Device[deviceCount].SendDataOption = true;
         Device[deviceCount].TimerOption = true;
         Device[deviceCount].TimerOptional = true;
@@ -67,6 +100,7 @@ boolean Plugin_165(byte function, struct EventStruct *event, String& string)
         strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_165));
         strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_165));
         strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2], PSTR(PLUGIN_VALUENAME3_165));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[3], PSTR(PLUGIN_VALUENAME4_165));
         success = true;
         break;
       }
@@ -78,46 +112,18 @@ boolean Plugin_165(byte function, struct EventStruct *event, String& string)
         options[0] = F("Yewelink/TUYA");
         options[1] = F("Sonoff Dual");
         options[2] = F("LC TECH");
-        int optionValues[3];
-        optionValues[0] = SER_SWITCH_YEWE;
-        optionValues[1] = SER_SWITCH_SONOFFDUAL;
-        optionValues[2] = SER_SWITCH_LCTECH;
-        string += F("<TR><TD>Switch Type:<TD><select name='plugin_165_type'>");
-        for (byte x = 0; x < 3; x++)
-        {
-          string += F("<option value='");
-          string += optionValues[x];
-          string += "'";
-          if (choice == optionValues[x])
-            string += F(" selected");
-          string += ">";
-          string += options[x];
-          string += F("</option>");
-        }
-        string += F("</select>");
+        int optionValues[3] = { SER_SWITCH_YEWE, SER_SWITCH_SONOFFDUAL, SER_SWITCH_LCTECH };
+        addFormSelector(F("Switch Type"), F("plugin_165_type"), 3, options, optionValues, choice);
 
         if (Settings.TaskDevicePluginConfig[event->TaskIndex][0] == SER_SWITCH_YEWE)
         {
-
           choice = Settings.TaskDevicePluginConfig[event->TaskIndex][1];
-          byte buttonOptions[3];
-          buttonOptions[0] = 1;
-          buttonOptions[1] = 2;
-          buttonOptions[2] = 3;
-          string += F("<TR><TD>Number of relays:<TD><select name='plugin_165_button'>");
-          for (byte x = 0; x < 3; x++)
-          {
-            string += F("<option value='");
-            string += buttonOptions[x];
-            string += "'";
-            if (choice == buttonOptions[x])
-              string += F(" selected");
-            string += ">";
-            string += buttonOptions[x];
-            string += F("</option>");
-          }
-          string += F("</select>");
-
+          String buttonOptions[3];
+          buttonOptions[0] = F("1");
+          buttonOptions[1] = F("2/Dimmer#2");
+          buttonOptions[2] = F("3/Dimmer#3");
+          int buttonoptionValues[3] = { 1, 2, 3 };
+          addFormSelector(F("Number of relays"), F("plugin_165_button"), 3, buttonOptions, buttonoptionValues, choice);
         }
 
         if (Settings.TaskDevicePluginConfig[event->TaskIndex][0] == SER_SWITCH_SONOFFDUAL)
@@ -127,41 +133,20 @@ boolean Plugin_165(byte function, struct EventStruct *event, String& string)
           modeoptions[0] = F("Normal");
           modeoptions[1] = F("Exclude/Blinds mode");
           modeoptions[2] = F("Simultaneous mode");
-          string += F("<TR><TD>Relay working mode:<TD><select name='plugin_165_mode'>");
-          for (byte x = 0; x < 3; x++)
-          {
-            string += F("<option value='");
-            string += x;
-            string += "'";
-            if (choice == x)
-              string += F(" selected");
-            string += ">";
-            string += modeoptions[x];
-            string += F("</option>");
-          }
-          string += F("</select>");
-
+          int modeoptionValues[3] = { 0, 1, 2 };
+          addFormSelector(F("Relay working mode"), F("plugin_165_mode"), 3, modeoptions, modeoptionValues, choice);
         }
 
         if (Settings.TaskDevicePluginConfig[event->TaskIndex][0] == SER_SWITCH_LCTECH)
         {
           choice = Settings.TaskDevicePluginConfig[event->TaskIndex][1];
-          byte buttonOptions[2];
-          buttonOptions[0] = 1;
-          buttonOptions[1] = 2;
-          string += F("<TR><TD>Number of relays:<TD><select name='plugin_165_button'>");
-          for (byte x = 0; x < 2; x++)
-          {
-            string += F("<option value='");
-            string += buttonOptions[x];
-            string += "'";
-            if (choice == buttonOptions[x])
-              string += F(" selected");
-            string += ">";
-            string += buttonOptions[x];
-            string += F("</option>");
-          }
-          string += F("</select>");
+          String buttonOptions[4];
+          buttonOptions[0] = F("1");
+          buttonOptions[1] = F("2");
+          buttonOptions[2] = F("3");
+          buttonOptions[3] = F("4");
+          int buttonoptionValues[4] = { 1, 2, 3, 4 };
+          addFormSelector(F("Number of relays"), F("plugin_165_button"), 4, buttonOptions, buttonoptionValues, choice);
 
           choice = Settings.TaskDevicePluginConfig[event->TaskIndex][2];
           String speedOptions[8];
@@ -173,25 +158,9 @@ boolean Plugin_165(byte function, struct EventStruct *event, String& string)
           speedOptions[5] = F("4800");
           speedOptions[6] = F("38400");
           speedOptions[7] = F("57600");
-          string += F("<TR><TD>Serial speed:<TD><select name='plugin_165_speed'>");
-          for (byte x = 0; x < 8; x++)
-          {
-            string += F("<option value='");
-            string += x;
-            string += "'";
-            if (choice == x)
-              string += F(" selected");
-            string += ">";
-            string += speedOptions[x];
-            string += F("</option>");
-          }
-          string += F("</select>");
+          addFormSelector(F("Serial speed"), F("plugin_165_speed"), 8, speedOptions, NULL, choice);
 
-          string += F("<TR><TD>Use command doubling:<TD>");
-          if (Settings.TaskDevicePluginConfig[event->TaskIndex][3])
-            string += F("<input type=checkbox name=plugin_165_dbl checked>");
-          else
-            string += F("<input type=checkbox name=plugin_165_dbl>");
+          addFormCheckBox(F("Use command doubling"), F("plugin_165_dbl"), Settings.TaskDevicePluginConfig[event->TaskIndex][3]);
         }
 
         success = true;
@@ -201,27 +170,20 @@ boolean Plugin_165(byte function, struct EventStruct *event, String& string)
     case PLUGIN_WEBFORM_SAVE:
       {
 
-        String plugin1 = WebServer.arg("plugin_165_type");
-        Settings.TaskDevicePluginConfig[event->TaskIndex][0] = plugin1.toInt();
-
+        Settings.TaskDevicePluginConfig[event->TaskIndex][0] = getFormItemInt(F("plugin_165_type"));
         if (Settings.TaskDevicePluginConfig[event->TaskIndex][0] == SER_SWITCH_YEWE)
         {
-          String plugin2 = WebServer.arg("plugin_165_button");
-          Settings.TaskDevicePluginConfig[event->TaskIndex][1] = plugin2.toInt();
+          Settings.TaskDevicePluginConfig[event->TaskIndex][1] = getFormItemInt(F("plugin_165_button"));
         }
         if (Settings.TaskDevicePluginConfig[event->TaskIndex][0] == SER_SWITCH_SONOFFDUAL)
         {
-          String plugin2 = WebServer.arg("plugin_165_mode");
-          Settings.TaskDevicePluginConfig[event->TaskIndex][1] = plugin2.toInt();
+          Settings.TaskDevicePluginConfig[event->TaskIndex][1] = getFormItemInt(F("plugin_165_mode"));
         }
         if (Settings.TaskDevicePluginConfig[event->TaskIndex][0] == SER_SWITCH_LCTECH)
         {
-          String plugin2 = WebServer.arg("plugin_165_button");
-          Settings.TaskDevicePluginConfig[event->TaskIndex][1] = plugin2.toInt();
-          String plugin3 = WebServer.arg("plugin_165_speed");
-          Settings.TaskDevicePluginConfig[event->TaskIndex][2] = plugin3.toInt();
-          String plugin4 = WebServer.arg("plugin_165_dbl");
-          Settings.TaskDevicePluginConfig[event->TaskIndex][3] = (plugin4 == "on");
+          Settings.TaskDevicePluginConfig[event->TaskIndex][1] = getFormItemInt(F("plugin_165_button"));
+          Settings.TaskDevicePluginConfig[event->TaskIndex][2] = getFormItemInt(F("plugin_165_speed"));
+          Settings.TaskDevicePluginConfig[event->TaskIndex][3] = isFormItemChecked(F("plugin_165_dbl"));
           Plugin_165_cmddbl = Settings.TaskDevicePluginConfig[event->TaskIndex][3];
         }
 
@@ -237,13 +199,16 @@ boolean Plugin_165(byte function, struct EventStruct *event, String& string)
         String log = "";
         LoadTaskSettings(event->TaskIndex);
         Plugin_165_ownindex = event->TaskIndex;
-        Serial.setDebugOutput(false);
+        Settings.UseSerial = true;         // make sure that serial enabled
+        Settings.SerialLogLevel = 0;       // and logging disabled
+        Serial.setDebugOutput(false);      // really, disable it!
         Serial.setRxBufferSize(BUFFER_SIZE); // Arduino core for ESP8266 WiFi chip 2.4.0
         log = F("SerSW : Init ");
         if (Settings.TaskDevicePluginConfig[event->TaskIndex][0] == SER_SWITCH_YEWE)
         {
           Plugin_165_numrelay = Settings.TaskDevicePluginConfig[event->TaskIndex][1];
           Serial.begin(9600, SERIAL_8N1);
+          Serial.setRxBufferSize(BUFFER_SIZE); // Arduino core for ESP8266 WiFi chip 2.4.0          
           delay(1);
           getmcustate(); // request status on startup
           log += F(" Yewe ");
@@ -253,7 +218,7 @@ boolean Plugin_165(byte function, struct EventStruct *event, String& string)
         if (Settings.TaskDevicePluginConfig[event->TaskIndex][0] == SER_SWITCH_SONOFFDUAL)
         {
           Plugin_165_numrelay = 3; // 3rd button is the "wifi" button
-          Serial.begin(19230, SERIAL_8N1);
+          Serial.begin(19230, SERIAL_8N1);          
           log += F(" Sonoff Dual");
         }
         if (Settings.TaskDevicePluginConfig[event->TaskIndex][0] == SER_SWITCH_LCTECH)
@@ -450,45 +415,80 @@ boolean Plugin_165(byte function, struct EventStruct *event, String& string)
                       bytes_read = 0;
                     }
                     if (bytes_read == 10) {
-                      byte btnnum = (serial_buf[6] - 1);
-                      Plugin_165_ostate[btnnum] = Plugin_165_switchstate[btnnum];
-                      Plugin_165_switchstate[btnnum] = serial_buf[10];
-                      Plugin_165_commandstate = 2; bytes_read = 0;
+                      if (serial_buf[5] == 5) {
+                        byte btnnum = (serial_buf[6] - 1);
+                        Plugin_165_ostate[btnnum] = Plugin_165_switchstate[btnnum];
+                        Plugin_165_switchstate[btnnum] = serial_buf[10];
+                        Plugin_165_commandstate = 2; bytes_read = 0;
 
-                      if (Plugin_165_ostate[btnnum] != Plugin_165_switchstate[btnnum]) {
-                        log = F("SerSW   : State");
-                        switch (btnnum) {
-                          case 0: {
-                              if (Plugin_165_numrelay > 0) {
-                                UserVar[event->BaseVarIndex + btnnum] = Plugin_165_switchstate[btnnum];
-                                log += F(" r0:");
-                                log += Plugin_165_switchstate[btnnum];
+                        if (Plugin_165_ostate[btnnum] != Plugin_165_switchstate[btnnum]) {
+                          log = F("SerSW   : State");
+                          switch (btnnum) {
+                            case 0: {
+                                if (Plugin_165_numrelay > 0) {
+                                  UserVar[event->BaseVarIndex + btnnum] = Plugin_165_switchstate[btnnum];
+                                  log += F(" r0:");
+                                  log += Plugin_165_switchstate[btnnum];
+                                }
+                                break;
                               }
-                              break;
-                            }
-                          case 1: {
-                              if (Plugin_165_numrelay > 1) {
-                                UserVar[event->BaseVarIndex + btnnum] = Plugin_165_switchstate[btnnum];
-                                log += F(" r1:");
-                                log += Plugin_165_switchstate[btnnum];
+                            case 1: {
+                                if (Plugin_165_numrelay > 1) {
+                                  UserVar[event->BaseVarIndex + btnnum] = Plugin_165_switchstate[btnnum];
+                                  log += F(" r1:");
+                                  log += Plugin_165_switchstate[btnnum];
+                                }
+                                break;
                               }
-                              break;
-                            }
-                          case 2: {
-                              if (Plugin_165_numrelay > 2) {
-                                UserVar[event->BaseVarIndex + btnnum] = Plugin_165_switchstate[btnnum];
-                                log += F(" r2:");
-                                log += Plugin_165_switchstate[btnnum];
+                            case 2: {
+                                if (Plugin_165_numrelay > 2) {
+                                  UserVar[event->BaseVarIndex + btnnum] = Plugin_165_switchstate[btnnum];
+                                  log += F(" r2:");
+                                  log += Plugin_165_switchstate[btnnum];
+                                }
+                                break;
                               }
-                              break;
-                            }
+                          }
+                          event->sensorType = Plugin_165_type;
+                          addLog(LOG_LEVEL_INFO, log);
+                          sendData(event);
                         }
-                        event->sensorType = Plugin_165_type;
-                        addLog(LOG_LEVEL_INFO, log);
-                        sendData(event);
                       }
-                    } //10th byte end (Tuya package)
+                    } //10th byte end (Tuya switch)
 
+                    if (bytes_read == 13) {
+                      if (serial_buf[5] == 8) {
+                        byte btnnum = (serial_buf[6] - 1);
+                        Plugin_165_ostate[btnnum] = Plugin_165_switchstate[btnnum];
+                        Plugin_165_switchstate[btnnum] = serial_buf[13];
+                        Plugin_165_commandstate = 2; bytes_read = 0;
+
+                        if (Plugin_165_ostate[btnnum] != Plugin_165_switchstate[btnnum]) {
+                          log = F("SerSW   : Dimmer");
+                          switch (btnnum) {
+                            case 1: {
+                                if (Plugin_165_numrelay > 1) {
+                                  UserVar[event->BaseVarIndex + btnnum] = Plugin_165_switchstate[btnnum];
+                                  log += F(" d1:");
+                                  log += Plugin_165_switchstate[btnnum];
+                                }
+                                break;
+                              }
+                            case 2: {
+                                if (Plugin_165_numrelay > 2) {
+                                  UserVar[event->BaseVarIndex + btnnum] = Plugin_165_switchstate[btnnum];
+                                  log += F(" d2:");
+                                  log += Plugin_165_switchstate[btnnum];
+                                }
+                                break;
+                              }
+                          }
+                          event->sensorType = Plugin_165_type;
+                          addLog(LOG_LEVEL_INFO, log);
+                          sendData(event);
+                        }
+                      }
+                    } //13th byte end (Tuya dimmer)
 
                   } // yewe decode end
                 } // Plugin_165_commandstate 1 end
@@ -569,9 +569,83 @@ boolean Plugin_165(byte function, struct EventStruct *event, String& string)
             log += F(":");
             log += rcmd;
             addLog(LOG_LEVEL_INFO, log);
-
+            log = F("\nOk");
+            SendStatus(event->Source, log);
           }
+
+          if ( command == F("relaypulse") )
+          {
+            success = true;
+
+            if ((event->Par1 >= 0) && (event->Par1 < Plugin_165_numrelay)) {
+              rnum = event->Par1;
+            }
+            if ((event->Par2 == 0) || (event->Par2 == 1)) {
+              rcmd = event->Par2;
+            }
+            LoadTaskSettings(Plugin_165_ownindex); // get our own task values please
+            event->TaskIndex = Plugin_165_ownindex;
+            byte varIndex = Plugin_165_ownindex * VARS_PER_TASK;
+            event->BaseVarIndex = varIndex;
+
+            if ( Plugin_165_globalpar0 < SER_SWITCH_LCTECH) {
+              par3 = Plugin_165_globalpar1;
+            }
+
+            sendmcucommand(rnum, rcmd, Plugin_165_globalpar0, par3); // init state
+            delay(event->Par3);
+            sendmcucommand(rnum, !rcmd, Plugin_165_globalpar0, par3); // invert state
+            if ( Plugin_165_globalpar0 > SER_SWITCH_YEWE) { // report state only if not Yewe
+              if (UserVar[(varIndex + rnum)] != Plugin_165_switchstate[rnum]) { // report only if state is really changed
+                UserVar[(varIndex + rnum)] = Plugin_165_switchstate[rnum];
+                if (( par3 == 1) && (rcmd == 1) && (rnum < 2))
+                { // exclusive on mode for Dual
+                  UserVar[(varIndex + 1 - rnum)] = 0;
+                }
+                if (par3 == 2) { // simultaneous mode for Dual
+                  UserVar[(varIndex + 1 - rnum)] = Plugin_165_switchstate[1 - rnum];
+                }
+                event->sensorType = Plugin_165_type;
+                sendData(event);
+              }
+            }
+
+            String log = F("SerSW   : SetSwitchPulse r");
+            log += rnum;
+            log += F(":");
+            log += rcmd;
+            log += F(" Pulsed for ");
+            log += String(event->Par3);
+            log += F(" mS");
+            addLog(LOG_LEVEL_INFO, log);
+            log = F("\nOk");
+            SendStatus(event->Source, log);
+          }
+
+          if ( command == F("ydim") ) // deal with dimmer command
+          {
+            String log = F("SerSW   : SetDim ");
+            if ( (Plugin_165_globalpar0 == SER_SWITCH_YEWE) && (Plugin_165_numrelay > 1)) { // only on tuya dimmer
+              success = true;
+
+              LoadTaskSettings(Plugin_165_ownindex); // get our own task values please
+              event->TaskIndex = Plugin_165_ownindex;
+              byte varIndex = Plugin_165_ownindex * VARS_PER_TASK;
+              event->BaseVarIndex = varIndex;
+
+              sendmcudim(event->Par1);
+
+              log += event->Par1;
+              addLog(LOG_LEVEL_INFO, log);
+              log = F("\nOk");
+            } else {
+              log = F("\nNot supported");
+            }
+            SendStatus(event->Source, log);
+          }
+
         }
+
         break;
       }
 
@@ -631,7 +705,6 @@ void sendmcucommand(byte btnnum, byte state, byte swtype, byte btnum_mode) // bt
         Serial.write( sstate );
         Serial.write(0xA1);
         Serial.flush();
-        delay(1);
         break;
       }
     case SER_SWITCH_LCTECH:
@@ -643,16 +716,38 @@ void sendmcucommand(byte btnnum, byte state, byte swtype, byte btnum_mode) // bt
         Plugin_165_switchstate[btnnum] = state;
         for (byte x = 0; x < c_d; x++) // try twice to be sure
         {
+          if (x > 0) {
+            delay(1);
+          }
           Serial.write(0xA0);
           Serial.write((0x01 + btnnum));
           Serial.write((0x00 + state));
           Serial.write((0xA1 + state + btnnum));
           Serial.flush();
-          delay(1);
         }
 
         break;
 
       }
   }
+}
+
+void sendmcudim(byte dimvalue)
+{
+  Serial.write(0x55); // Tuya header 55AA
+  Serial.write(0xAA);
+  Serial.write(0x00); // version 00
+  Serial.write(0x06); // Tuya command 06 - send order
+  Serial.write(0x00);
+  Serial.write(0x08); // following data length 0x08
+  Serial.write(Plugin_165_numrelay); // dimmer order-id? select it at plugin settings 2/3!!!
+  Serial.write(0x02); // type=value
+  Serial.write(0x00); // length hi
+  Serial.write(0x04); // length low
+  Serial.write(0x00); // ?
+  Serial.write(0x00); // ?
+  Serial.write(0x00); // ?
+  Serial.write( dimvalue ); // dim value (0-255)
+  Serial.write( byte(19 + Plugin_165_numrelay + dimvalue) ); // checksum:sum of all bytes in packet mod 256
+  Serial.flush();
 }

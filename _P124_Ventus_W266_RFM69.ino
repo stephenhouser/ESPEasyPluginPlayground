@@ -6,7 +6,7 @@
 
 // Purpose: Receiving weather data from a Ventus W266 outdoor unit using a RFM69 receiver modul
 
-// This plugin is based on the P186_Ventus_W266 plugin and is modified to use a RFM69 transceiver
+// This plugin is based on the P186_Ventus_W266 plugin and is modified to use a RFM69HCW transceiver
 // instead of the internal RFM31 of the Ventus indoor unit.
 
 // With this plugin it is possible to receive the data sent from the outdoor unit of a Ventus W266
@@ -61,16 +61,13 @@
 // lllh ... strike count (low/high byte) > A uint16 holding the accumulated number of detected lightning strikes
 // crc .... CRC checksum > Poly 0x31, init 0xff, revin&revout, xorout 0x00. Like Maxim 1-wire but with a 0xff init value
 
-// If you got any questions, send me an email to: huawatuam@gmail.com
-
-
 #include <SPI.h>
 
-#define PLUGIN_124_DEBUG            true                        // Shows recieved frames and crc in log@INFO
+#define PLUGIN_124_DEBUG            true                        // Shows received frames and crc in log@INFO
 
-#define PLUGIN_124                                              // Mandatory framework constants
+#define PLUGIN_124
 #define PLUGIN_ID_124               124
-#define PLUGIN_NAME_124             "Ventus W266 RFM69"
+#define PLUGIN_NAME_124             "Ventus W266 RFM69 [TESTING]"
 #define PLUGIN_VALUENAME1_124       ""
 #define PLUGIN_VALUENAME2_124       ""
 #define PLUGIN_VALUENAME3_124       ""
@@ -92,7 +89,7 @@ enum instanceTypes { INSTANCE_TH,
 
 boolean firstrun = true;
 boolean dataValid = false;
-boolean newDataPending = false;
+boolean dataPending = false;
 
 uint16_t timer300s = 0;
 uint16_t timer3600s = 0;
@@ -113,6 +110,8 @@ float rainLevelOneHourAgoe = 0;
 float rainLevelPastHour = 0;
 uint16_t strikes5minutesAgoe = 0;
 uint16_t strikesPast5minutes = 0;
+
+uint8_t timeSlot = 0;
 
 // ******************************************************
 
@@ -1029,7 +1028,7 @@ void RFM69_setMode(uint8_t newMode)
 }
 
 void RFM69init()
-{
+{  
   digitalWrite(Plugin_124_RESET_Pin, HIGH);
   delay(10);
   digitalWrite(Plugin_124_RESET_Pin, LOW);
@@ -1172,7 +1171,7 @@ uint8_t calcCRC(uint8_t *buffer, uint8_t data_size)
 boolean Plugin_124(uint8_t function, struct EventStruct *event, String& string)
 {
   boolean success = false;
-
+ 
   switch (function)
   {
     case PLUGIN_DEVICE_ADD:
@@ -1186,6 +1185,22 @@ boolean Plugin_124(uint8_t function, struct EventStruct *event, String& string)
         Device[deviceCount].FormulaOption = true;
         Device[deviceCount].SendDataOption = true;
         Device[deviceCount].ValueCount = 3;
+        Device[deviceCount].TimerOption = false;
+        Device[deviceCount].TimerOptional = false;
+        break;
+      }
+
+    case PLUGIN_GET_DEVICENAME:
+      {
+        string = F(PLUGIN_NAME_124);
+        break;
+      }
+
+    case PLUGIN_GET_DEVICEVALUENAMES:
+      {
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_124));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_124));
+        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2], PSTR(PLUGIN_VALUENAME3_124));        
         break;
       }
 
@@ -1201,115 +1216,69 @@ boolean Plugin_124(uint8_t function, struct EventStruct *event, String& string)
         instance[INSTANCE_LIGHTNING] = F("Lightning");
         instance[INSTANCE_BATTERY] = F("Battery");
 
-
         if (instanceType == INSTANCE_TH)
-        {
-          string += F("<TR><TD>Unit ID:<TD><input type='text' name='plugin_124_unitID' value='");
-          string += Settings.TaskDevicePluginConfig[event->TaskIndex][1];
-          string += F("'>");
-        }
+          addFormNumericBox(F("Unit ID"), F("plugin_124_unitID"), Settings.TaskDevicePluginConfig[event->TaskIndex][1], 0, 255);
+          
+        addFormSelector(F("Plugin function"), F("plugin_124_instanceType"), NUMBER_OF_INSTANCES, instance, NULL, instanceType);
 
-        string += F("<TR><TD>Plugin function:<TD><select name='plugin_124_instanceType'>");
-        for (uint8_t x = 0; x < NUMBER_OF_INSTANCES; x++)
-        {
-          string += F("<option value='");
-          string += x;
-          string += "'";
-          if (instanceType == x)
-            string += F(" selected");
-          string += ">";
-          string += instance[x];
-          string += F("</option>");
-        }
+        addFormSubHeader(F("Information"));
 
         switch (instanceType)
         {
           case INSTANCE_TH:
             {
-              string += F("<TR><TD>");
-              string += F("<B>Be sure to only have one main plugin!</B>");
-              string += F("</TD>");
-
-              string += F("<TR><TD>");
-              string += F("Value 1: Temperature (1 decimal)<BR>");
-              string += F("Value 2: Humidity (0 decimal)<BR>");
-              string += F("Value 3: not used");
-              string += F("</TD>");
+              addHtml(F("<BR><B>Be sure to only have one main plugin!</B>"));
+              
+              addHtml(F("<BR><BR>Value 1: Temperature (1 decimal)"));
+              addHtml(F("<BR>Value 2: Humidity (0 decimal)"));
+              addHtml(F("<BR>Value 3: not used"));
               break;
             }
           case INSTANCE_WIND:
             {
-              string += F("<TR><TD>");
-              string += F("Value 1: Direction (1 decimal)<BR>");
-              string += F("Value 2: Average m/s (1 decimal)<BR>");
-              string += F("Value 3: Gust m/s (1 decimal)");
-              string += F("</TD>");
+              addHtml(F("<BR>Value 1: Direction (1 decimal)"));
+              addHtml(F("<BR>Value 2: Average m/s (1 decimal)"));
+              addHtml(F("<BR>Value 3: Gust m/s (1 decimal)"));
               break;
             }
           case INSTANCE_RAIN:
             {
-              string += F("<TR><TD>");
-              string += F("Value 1: Total rain in mm (1 decimal)<BR>");
-              string += F("Value 2: Rainfall past hour in mm (1 decimal)<BR>");
-              string += F("Value 3: not used");
-              string += F("</TD>");
+              addHtml(F("<BR>Value 1: Total rain in mm (1 decimal)"));
+              addHtml(F("<BR>Value 2: Rainfall past hour in mm (1 decimal)"));
+              addHtml(F("<BR>Value 3: not used"));              
               break;
             }
           case INSTANCE_UV:
             {
-              string += F("<TR><TD>");
-              string += F("Value 1: UV (1 decimal)<BR>");
-              string += F("Value 2: not used<BR>");
-              string += F("Value 3: not used");
-              string += F("</TD>");
+              addHtml(F("<BR>Value 1: UV (1 decimal)"));
+              addHtml(F("<BR>Value 2: not used"));
+              addHtml(F("<BR>Value 3: not used"));
               break;
             }
           case INSTANCE_LIGHTNING:
             {
-              string += F("<TR><TD>");
-              string += F("Value 1: Strike counter (0 decimal)<BR>");
-              string += F("Value 2: Strikes past 5 minutes (0 decimal)<BR>");
-              string += F("Value 3: Distance in km (0 decimal)");
-              string += F("</TD>");
+              addHtml(F("<BR>Value 1: Strike counter (0 decimal)"));
+              addHtml(F("<BR>Value 2: Strikes past 5 minutes (0 decimal)"));
+              addHtml(F("<BR>Value 3: Distance in km (0 decimal)"));
               break;
             }
           case INSTANCE_BATTERY:
             {
-              string += F("<TR><TD>");
-              string += F("Value 1: Battery low (0 decimal)<BR>");
-              string += F("Value 2: not used<BR>");
-              string += F("Value 3: not used");
-              string += F("</TD>");
+              addHtml(F("<BR>Value 1: Battery low (0 decimal)"));
+              addHtml(F("<BR>Value 2: not used"));
+              addHtml(F("<BR>Value 3: not used"));
               break;
             }
         }
-
         success = true;
         break;
       }
 
     case PLUGIN_WEBFORM_SAVE:
       {
-        String plugin1 = WebServer.arg("plugin_124_instanceType");
-        String plugin2 = WebServer.arg("plugin_124_unitID");
-        Settings.TaskDevicePluginConfig[event->TaskIndex][0] = plugin1.toInt();     // instance type
-        Settings.TaskDevicePluginConfig[event->TaskIndex][1] = plugin2.toInt();     // unit ID
-
+        Settings.TaskDevicePluginConfig[event->TaskIndex][0] = getFormItemInt(F("plugin_124_instanceType"));
+        Settings.TaskDevicePluginConfig[event->TaskIndex][1] = getFormItemInt(F("plugin_124_unitID"));
         success = true;
-        break;
-      }
-
-    case PLUGIN_GET_DEVICENAME:
-      {
-        string = F(PLUGIN_NAME_124);
-        break;
-      }
-
-    case PLUGIN_GET_DEVICEVALUENAMES:
-      {
-        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[0], PSTR(PLUGIN_VALUENAME1_124));
-        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[1], PSTR(PLUGIN_VALUENAME2_124));
-        strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2], PSTR(PLUGIN_VALUENAME3_124));
         break;
       }
 
@@ -1328,196 +1297,241 @@ boolean Plugin_124(uint8_t function, struct EventStruct *event, String& string)
               // initialize SPI
               SPI.setHwCs(false);
               SPI.begin();
-              addLog(LOG_LEVEL_INFO, (char*)"P124 : SPI Init");
+              addLog(LOG_LEVEL_INFO, F("P124 : SPI Init"));
 
               // initilize RFM69
               RFM69init();
-              addLog(LOG_LEVEL_INFO, (char*)"P124 : RFM69 Init");
+              
+              addLog(LOG_LEVEL_INFO, F("P124 : RFM69 Init"));
 
               break;
             }
         }
+        success = true;
         break;
       }
 
     case PLUGIN_ONCE_A_SECOND:
       {
-        // check only if MAIN instance is calling
-        if (Settings.TaskDevicePluginConfig[event->TaskIndex][0] == INSTANCE_TH)
+        // Main TH-instance calling?
+        if (Settings.TaskDevicePluginConfig[event->TaskIndex][0] == INSTANCE_TH)        
         {
-          newDataPending = false;
-          
-          // received data pending?
-          if (digitalRead(Plugin_124_DIO0_Pin) == HIGH)
+          if (dataPending == true)
           {
-            uint8_t i = 0;
-            uint8_t buffer[PAYLOAD_SIZE];
-
-            // fetch FIFO
-            // receiver is disabled until FIFO is completely empty -> receiver is auto-enabled when done
-            digitalWrite(Plugin_124_SPI_CS_Pin, LOW);
-            SPI.transfer(RFM69_REG_00_FIFO & ~0x80);
-            while ((digitalRead(Plugin_124_DIO0_Pin) == HIGH) && (i < PAYLOAD_SIZE))
-              buffer[i++] = SPI.transfer(0x00);
-            digitalWrite(Plugin_124_SPI_CS_Pin, HIGH);
-
+            timeSlot++;
+          }
+          else
+          {
+            // received data pending?
+            if (digitalRead(Plugin_124_DIO0_Pin) == HIGH)
+            {
+              uint8_t i = 0;
+              uint8_t buffer[PAYLOAD_SIZE];
+      
+              // fetch FIFO
+              // receiver is disabled until FIFO is completely empty -> receiver is auto-enabled when done
+              digitalWrite(Plugin_124_SPI_CS_Pin, LOW);
+              SPI.transfer(RFM69_REG_00_FIFO & ~0x80);
+              while ((digitalRead(Plugin_124_DIO0_Pin) == HIGH) && (i < PAYLOAD_SIZE))
+                buffer[i++] = SPI.transfer(0x00);
+              digitalWrite(Plugin_124_SPI_CS_Pin, HIGH);
+      
 #ifdef PLUGIN_124_DEBUG
-            // CRC correct?
-            if (buffer[21] == calcCRC((uint8_t*)buffer, (PAYLOAD_SIZE - 1)))
-            {
-              String log = F("P124 : RX: ");
-
-              for (i = 0; i < PAYLOAD_SIZE; i++)
+              // CRC correct?
+              if (buffer[21] == calcCRC((uint8_t*)buffer, (PAYLOAD_SIZE - 1)))
               {
-                //log += String(buffer[i], HEX);    // hexadecimal output format
-                log += buffer[i];                   // decimal output format
-                log += F(" ");
+                String log = F("P124 : RX: ");
+      
+                for (i = 0; i < PAYLOAD_SIZE; i++)
+                {
+                  //log += String(buffer[i], HEX);    // hexadecimal output format
+                  log += buffer[i];                   // decimal output format
+                  log += F(" ");
+                }
+      
+                // Ventus ID matches specified unit ID?
+                if (buffer[0] == Settings.TaskDevicePluginConfig[event->TaskIndex][1])
+                  log += F(" IDs match");
+                else
+                  log += F(" IDs do not match!");
+      
+                addLog(LOG_LEVEL_INFO, log);
               }
-
-              // Ventus ID matches specified unit ID?
-              if (buffer[0] == Settings.TaskDevicePluginConfig[event->TaskIndex][1])
-                log += F(" IDs match");
-              else
-                log += F(" IDs do not match!");
-
-              addLog(LOG_LEVEL_INFO, log);
-            }
-#endif
-
-            // CRC correct and IDs match?
-            if ((buffer[21] == calcCRC((uint8_t*)buffer, (PAYLOAD_SIZE - 1))) && (buffer[0] == Settings.TaskDevicePluginConfig[event->TaskIndex][1]))
-            {
-              humidity = (buffer[1] & 0x0F) + (buffer[1] >> 4) * 10;                      // %rel LF. (BCD coded)
-              temperature = (float)((int16_t)((buffer[4] << 8) + buffer[3])) / 10.0;      // °C (todo: check offset)
-              batteryLow = buffer[5] & 0x01;                                              // 0=ok, 1=low
-              windDIR = float(buffer[8] & 0x0F) * 22.5;                                   // 0..360°
-              windAVG = float((buffer[10] << 8) + buffer[9]) / 10.0;                      // m/s
-              windGUST = float((buffer[12] << 8) + buffer[11]) / 10.0;                    // m/s
-              rainTotal = float((buffer[14] << 8) + buffer[13]) / 4.0;                    // mm
-              uv = (float)buffer[16] / 10.0;                                              // UV index
-              if (buffer[17] == 0x3F)
-                strikesDistance = -1;
-              else
-                strikesDistance = buffer[17];                                             // km
-              strikesTotal = (buffer[20] << 8) + buffer[19];                              // count
-
-              // Data plausibility check
-              if ((humidity <= 100) &&
-                  (temperature >= -20) && (temperature <= 60) &&
-                  (windDIR <= 360) &&
-                  (windAVG <= 30) &&
-                  (windGUST <= 30) &&
-                  (uv <= 15) &&
-                  (strikesDistance <= 30)
-                 )
+#endif  // PLUGIN_124_DEBUG
+      
+              // CRC correct and IDs match?
+              if ((buffer[21] == calcCRC((uint8_t*)buffer, (PAYLOAD_SIZE - 1))) && (buffer[0] == Settings.TaskDevicePluginConfig[event->TaskIndex][1]))
               {
-                dataValid = true;
-                newDataPending = true;
+                humidity = (buffer[1] & 0x0F) + (buffer[1] >> 4) * 10;                      // %rel LF. (BCD coded)
+                temperature = (float)((int16_t)((buffer[4] << 8) + buffer[3])) / 10.0;      // °C (todo: check offset)
+                batteryLow = buffer[5] & 0x01;                                              // 0=ok, 1=low
+                windDIR = float(buffer[8] & 0x0F) * 22.5;                                   // 0..360°
+                windAVG = float((buffer[10] << 8) + buffer[9]) / 10.0;                      // m/s
+                windGUST = float((buffer[12] << 8) + buffer[11]) / 10.0;                    // m/s
+                rainTotal = float((buffer[14] << 8) + buffer[13]) / 4.0;                    // mm
+                uv = (float)buffer[16] / 10.0;                                              // UV index
+                if (buffer[17] == 0x3F)
+                  strikesDistance = -1;
+                else
+                  strikesDistance = buffer[17];                                             // km
+                strikesTotal = (buffer[20] << 8) + buffer[19];                              // count
+      
+                // Data plausibility check
+                if ((humidity <= 100) &&
+                    (temperature >= -20) && (temperature <= 60) &&
+                    (windDIR <= 360) &&
+                    (windAVG <= 30) &&
+                    (windGUST <= 30) &&
+                    (uv <= 15) &&
+                    (strikesDistance <= 30)
+                   )
+                {
+                  dataValid = true;
+                  dataPending = true;
+                  timeSlot = 0;
+                }
+              }
+            }
+      
+            // sensor data is initialized and valid?
+            if (dataValid)
+            {
+              if (firstrun)
+              {
+                // initialize reference values for statistics
+                firstrun = false;
+                strikes5minutesAgoe = strikesTotal;
+                rainLevelOneHourAgoe = rainTotal;
               }
             }
           }
 
-
-          // sensor data is initialized and valid?
-          if (dataValid)
+          // timer for strikes-statistic
+          if (timer300s-- <= 1)
           {
-            if (firstrun)
-            {
-              // initialize reference values for statistics
-              firstrun = false;
-              strikes5minutesAgoe = strikesTotal;
-              rainLevelOneHourAgoe = rainTotal;
-            }
-
-            // timer for strikes-statistic
-            if (timer300s-- <= 1)
-            {
-              timer300s = 300;
-              if (strikesTotal >= strikes5minutesAgoe)
-                strikesPast5minutes = strikesTotal - strikes5minutesAgoe;
-              else
-                strikesPast5minutes = (strikesTotal + 0xFFFF) - strikes5minutesAgoe;
-              strikes5minutesAgoe = strikesTotal;
-            }
-
-            // timer for rain-statistic
-            if (timer3600s-- <= 1)
-            {
-              timer3600s = 3600;
-              if (rainTotal >= rainLevelOneHourAgoe)
-                rainLevelPastHour = rainTotal - rainLevelOneHourAgoe;
-              else
-                rainLevelPastHour = (rainTotal + 0xFFFF) - rainLevelOneHourAgoe;
-              rainLevelOneHourAgoe = rainTotal;
-            }
+            timer300s = 300;
+            if (strikesTotal >= strikes5minutesAgoe)
+              strikesPast5minutes = strikesTotal - strikes5minutesAgoe;
+            else
+              strikesPast5minutes = (strikesTotal + 0xFFFF) - strikes5minutesAgoe;
+            strikes5minutesAgoe = strikesTotal;
+          }
+      
+          // timer for rain-statistic
+          if (timer3600s-- <= 1)
+          {
+            timer3600s = 3600;
+            if (rainTotal >= rainLevelOneHourAgoe)
+              rainLevelPastHour = rainTotal - rainLevelOneHourAgoe;
+            else
+              rainLevelPastHour = (rainTotal + 0xFFFF) - rainLevelOneHourAgoe;
+            rainLevelOneHourAgoe = rainTotal;
           }
         }
-       
-        // trigger immediate data forwarding
-        if (newDataPending)
-          timerSensor[event->TaskIndex] = millis() - 1;
-        else
-          timerSensor[event->TaskIndex] = millis() + 60000;     // prevent periodic transmission
 
+
+        // TRANSFER DATA
+        if (dataPending == true)
+        {
+          // check which instance is calling and send data
+          switch (Settings.TaskDevicePluginConfig[event->TaskIndex][0])
+          {
+            case INSTANCE_TH:
+            {
+              if (timeSlot == 0)
+                {
+                  UserVar[event->BaseVarIndex] = temperature;
+                  UserVar[event->BaseVarIndex + 1] = humidity;
+                  UserVar[event->BaseVarIndex + 2] = 0;
+                  event->sensorType = SENSOR_TYPE_TRIPLE;
+                  sendData(event);
+                }
+                break;
+            }
+              
+            case INSTANCE_WIND:
+              {
+                if (timeSlot == 1)
+                {
+                  UserVar[event->BaseVarIndex] = windDIR;
+                  UserVar[event->BaseVarIndex + 1] = windAVG;
+                  UserVar[event->BaseVarIndex + 2] = windGUST;
+                  event->sensorType = SENSOR_TYPE_TRIPLE;
+                  sendData(event);
+                }
+                break;
+              }
+         
+            case INSTANCE_RAIN:
+              {
+                if (timeSlot == 2)
+                {
+                  UserVar[event->BaseVarIndex] = rainTotal;
+                  UserVar[event->BaseVarIndex + 1] = rainLevelPastHour;
+                  UserVar[event->BaseVarIndex + 2] = 0;
+                  event->sensorType = SENSOR_TYPE_TRIPLE;
+                  sendData(event);
+                }
+                break;
+              }
+  
+            case INSTANCE_UV:
+              {
+                if (timeSlot == 3)
+                {
+                  UserVar[event->BaseVarIndex] = uv;
+                  UserVar[event->BaseVarIndex + 1] = 0;
+                  UserVar[event->BaseVarIndex + 2] = 0;
+                  event->sensorType = SENSOR_TYPE_TRIPLE;
+                  sendData(event);
+                }
+                break;
+              }
+              
+            case INSTANCE_LIGHTNING:
+              {
+                if (timeSlot == 4)
+                {
+                  UserVar[event->BaseVarIndex] = strikesTotal;
+                  UserVar[event->BaseVarIndex + 1] = strikesPast5minutes;
+                  UserVar[event->BaseVarIndex + 2] = strikesDistance;
+                  event->sensorType = SENSOR_TYPE_TRIPLE;
+                  sendData(event);
+                }
+                break;
+              }
+              
+            case INSTANCE_BATTERY:
+              {
+                if (timeSlot == 5)
+                {
+                  UserVar[event->BaseVarIndex] = batteryLow;
+                  UserVar[event->BaseVarIndex + 1] = 0;
+                  UserVar[event->BaseVarIndex + 2] = 0;
+                  event->sensorType = SENSOR_TYPE_TRIPLE;
+                  sendData(event);
+                }
+                break;
+              }
+          }
+  
+          if (timeSlot > 5)
+          {
+            timeSlot = 0;
+            dataPending = false;
+          }
+        }
         success = true;
         break;
       }
 
     case PLUGIN_READ:
       {
-        if (!dataValid)
-          break;
-
-        UserVar[event->BaseVarIndex] = 0;
-        UserVar[event->BaseVarIndex + 1] = 0;
-        UserVar[event->BaseVarIndex + 2] = 0;
-
-        // which plugin instance type?
-        switch (Settings.TaskDevicePluginConfig[event->TaskIndex][0])
-        {
-          case INSTANCE_TH:
-            {
-              UserVar[event->BaseVarIndex] = temperature;
-              UserVar[event->BaseVarIndex + 1] = humidity;
-              break;
-            }
-          case INSTANCE_WIND:
-            {
-              UserVar[event->BaseVarIndex] = windDIR;
-              UserVar[event->BaseVarIndex + 1] = windAVG;
-              UserVar[event->BaseVarIndex + 2] = windGUST;
-              break;
-            }
-          case INSTANCE_RAIN:
-            {
-              UserVar[event->BaseVarIndex] = rainTotal;
-              UserVar[event->BaseVarIndex + 1] = rainLevelPastHour;
-              break;
-            }
-          case INSTANCE_UV:
-            {
-              UserVar[event->BaseVarIndex] = uv;
-              break;
-            }
-          case INSTANCE_LIGHTNING:
-            {
-              UserVar[event->BaseVarIndex] = strikesTotal;
-              UserVar[event->BaseVarIndex + 1] = strikesPast5minutes;
-              UserVar[event->BaseVarIndex + 2] = strikesDistance;
-              break;
-            }
-          case INSTANCE_BATTERY:
-            {
-              UserVar[event->BaseVarIndex] = batteryLow;
-              break;
-            }
-        }
-
-        success = true;
+        success = false;
         break;
-      }
+      }      
   }
-
   return success;
 }
+
 #endif

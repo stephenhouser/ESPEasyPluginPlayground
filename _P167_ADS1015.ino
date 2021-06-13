@@ -1,10 +1,18 @@
-//#######################################################################################################
-//#################################### Plugin 167: ADS1015 I2C 0x48)  ###################################
-//# Supports slow, purple chinese ADS1015
-//# Needs soligen2010/Adafruit_ADS1x15 patched library
-//# https://github.com/soligen2010/Adafruit_ADS1X15
-//# WARNING: This plugin can not coexist with ADS1115 plugin!
-//#######################################################################################################
+/*##########################################################################################
+  ############################### Plugin 167: ADS1015 I2C 0x48) ############################
+  ##########################################################################################
+
+  Features :
+   Supports slow, purple chinese ADS1015
+   Needs soligen2010/Adafruit_ADS1x15 patched library
+    https://github.com/soligen2010/Adafruit_ADS1X15
+
+  WARNING: This plugin can not coexist with ADS1115 plugin!
+
+  ------------------------------------------------------------------------------------------
+  Copyleft Nagy Sándor 2018 - https://bitekmindenhol.blog.hu/
+  ------------------------------------------------------------------------------------------
+*/
 
 #ifdef PLUGIN_BUILD_TESTING
 
@@ -64,9 +72,9 @@ boolean Plugin_167(byte function, struct EventStruct *event, String& string)
 #define ADS1015_I2C_OPTION 4
         byte addr = Settings.TaskDevicePluginConfig[event->TaskIndex][0];
         int optionValues[ADS1015_I2C_OPTION] = { 0x48, 0x49, 0x4A, 0x4B };
-        addFormSelectorI2C(string, F("plugin_167_i2c"), ADS1015_I2C_OPTION, optionValues, addr);
+        addFormSelectorI2C(F("plugin_167_i2c"), ADS1015_I2C_OPTION, optionValues, addr);
 
-        addFormSubHeader(string, F("Input"));
+        addFormSubHeader(F("Input"));
 
 #define ADS1015_PGA_OPTION 6
         byte pga = Settings.TaskDevicePluginConfig[event->TaskIndex][1];
@@ -78,14 +86,14 @@ boolean Plugin_167(byte function, struct EventStruct *event, String& string)
           F("8x gain (FS=0.512V)"),
           F("16x gain (FS=0.256V)")
         };
-        addFormSelector(string, F("Gain"), F("plugin_167_gain"), ADS1015_PGA_OPTION, pgaOptions, NULL, pga);
+        addFormSelector(F("Gain"), F("plugin_167_gain"), ADS1015_PGA_OPTION, pgaOptions, NULL, pga);
 
-        addFormSubHeader(string, F("Used analog input pins:"));
+        addFormSubHeader(F("Used analog input pins:"));
 
-        addFormCheckBox(string, F("AIN0"), F("plugin_167_ain0"), Settings.TaskDevicePluginConfig[event->TaskIndex][2]);
-        addFormCheckBox(string, F("AIN1"), F("plugin_167_ain1"), Settings.TaskDevicePluginConfig[event->TaskIndex][3]);
-        addFormCheckBox(string, F("AIN2"), F("plugin_167_ain2"), Settings.TaskDevicePluginConfig[event->TaskIndex][4]);
-        addFormCheckBox(string, F("AIN3"), F("plugin_167_ain3"), Settings.TaskDevicePluginConfig[event->TaskIndex][5]);
+        addFormCheckBox(F("AIN0"), F("plugin_167_ain0"), Settings.TaskDevicePluginConfig[event->TaskIndex][2]);
+        addFormCheckBox(F("AIN1"), F("plugin_167_ain1"), Settings.TaskDevicePluginConfig[event->TaskIndex][3]);
+        addFormCheckBox(F("AIN2"), F("plugin_167_ain2"), Settings.TaskDevicePluginConfig[event->TaskIndex][4]);
+        addFormCheckBox(F("AIN3"), F("plugin_167_ain3"), Settings.TaskDevicePluginConfig[event->TaskIndex][5]);
 
         success = true;
         break;
